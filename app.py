@@ -6,38 +6,40 @@ from flask import (
 from werkzeug.utils import secure_filename
 from flask_sqlalchemy import SQLAlchemy
 
-UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'mp4', 'avi', 'txt', 'md'}
+UPLOAD_FOLDER = 'uploads'  # 上传文件保存根目录
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'mp4', 'avi', 'txt', 'md'}  # 允许上传的文件后缀
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['SECRET_KEY'] = 'your_production_secret_key_here_change_it'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
+app.config['SECRET_KEY'] = 'your_production_secret_key_here_change_it'  # 用于 session 加密，生产请修改
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'  # sqlite数据库路径
 db = SQLAlchemy(app)
 
 # -------- 数据库模型 --------
 class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    notes = db.relationship('Note', backref='author', lazy=True)
-    files = db.relationship('UploadFile', backref='owner', lazy=True)
+    id = db.Column(db.Integer, primary_key=True)  # 用户ID，自增主键
+    username = db.Column(db.String(80), unique=True, nullable=False)  # 用户名，唯一不可为空
+    notes = db.relationship('Note', backref='author', lazy=True)  # 用户笔记关系
+    files = db.relationship('UploadFile', backref='owner', lazy=True)  # 用户上传文件关系
 
 class Note(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    content = db.Column(db.Text, nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    id = db.Column(db.Integer, primary_key=True)  # 笔记ID，自增主键
+    content = db.Column(db.Text, nullable=False)  # 笔记内容，不可为空
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)  # 所属用户ID，外键关联User
 
 class UploadFile(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    filename = db.Column(db.String(120), nullable=False)
-    filetype = db.Column(db.String(20), nullable=False)  # image/video/text
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    id = db.Column(db.Integer, primary_key=True)  # 文件ID，自增主键
+    filename = db.Column(db.String(120), nullable=False)  # 文件名，不可为空
+    filetype = db.Column(db.String(20), nullable=False)  # 文件类型，image/video/text
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)  # 所属用户ID，外键
 
 # ----- 工具函数 -----
 def allowed_file(filename):
+    # 判断是否允许上传的文件类型
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def lcs(a, b):
+    # 计算两个字符串a, b的最长公共子序列长度
     n, m = len(a), len(b)
     dp = [[0] * (m + 1) for _ in range(n + 1)]
     for i in range(n):
@@ -49,12 +51,14 @@ def lcs(a, b):
     return dp[n][m]
 
 def get_current_user():
+    # 通过session获取当前登录用户对象
     username = session.get('username')
     if username:
         return User.query.filter_by(username=username).first()
     return None
 
 def login_required(func):
+    # 登录装饰器，用于保护需要登录访问的页面
     from functools import wraps
 
     @wraps(func)
@@ -67,6 +71,8 @@ def login_required(func):
     return decorated_view
 
 # -------- 模板 --------
+# 为方便单文件部署，所有HTML模板均用模板字符串实现并通过render_template_string渲染
+
 base_html = '''
 <!doctype html>
 <html lang="zh-CN">
@@ -78,7 +84,7 @@ base_html = '''
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 
   <style>
-    /* 金色 + 红色主题 */
+    /* 金色 + 红色主题色变量 */
     :root {
       --bs-primary: #bfa243; /* 金色 */
       --bs-primary-rgb: 191, 162, 67;
@@ -86,15 +92,15 @@ base_html = '''
       --bs-danger-rgb: 201, 48, 44;
     }
     nav.navbar {
-      background-color: var(--bs-primary);
+      background-color: var(--bs-primary); /* 顶部导航栏金色背景 */
     }
     nav.navbar .navbar-brand,
     nav.navbar .nav-link {
-      color: #800000;
+      color: #800000;  /* 深红色文字 */
       font-weight: 600;
     }
     nav.navbar .nav-link:hover {
-      color: #ff2626;
+      color: #ff2626;  /* 悬停鲜红色 */
     }
   </style>
   
@@ -365,10 +371,12 @@ profile_html = '''
 
 @app.before_request
 def make_session_permanent():
+    # 设置session永久有效（默认31天）
     session.permanent = True
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
+    # 首页登录页，POST请求登录，GET显示登录表单
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         if not username:
@@ -376,9 +384,11 @@ def index():
             return redirect(url_for('index'))
         user = User.query.filter_by(username=username).first()
         if not user:
+            # 若用户不存在，新建记录
             user = User(username=username)
             db.session.add(user)
             db.session.commit()
+        # 保存用户名到session，实现简单登录
         session['username'] = username
         flash(f'欢迎，{username}！', 'success')
         return redirect(url_for('dashboard'))
@@ -386,6 +396,7 @@ def index():
 
 @app.route('/logout')
 def logout():
+    # 清除登录状态，退出登录
     session.pop('username', None)
     flash('已退出登录', 'info')
     return redirect(url_for('index'))
@@ -393,16 +404,17 @@ def logout():
 @app.route('/dashboard', methods=['GET', 'POST'])
 @login_required
 def dashboard():
+    # 用户面板，上传文件、新建笔记，显示当前用户笔记和上传文件
     user = get_current_user()
 
     if request.method == 'POST':
-        # 上传文件
+        # 处理文件上传
         if 'file' in request.files:
             file = request.files['file']
             if file and allowed_file(file.filename):
                 filename = secure_filename(file.filename)
                 user_folder = os.path.join(app.config['UPLOAD_FOLDER'], user.username)
-                os.makedirs(user_folder, exist_ok=True)
+                os.makedirs(user_folder, exist_ok=True)  # 确保目录存在
                 save_path = os.path.join(user_folder, filename)
                 file.save(save_path)
 
@@ -422,7 +434,7 @@ def dashboard():
             else:
                 flash('文件格式不支持', 'danger')
 
-        # 新建笔记
+        # 处理笔记新建
         if 'note' in request.form:
             content = request.form.get('note', '').strip()
             if content:
@@ -434,6 +446,7 @@ def dashboard():
             else:
                 flash('笔记内容不能为空', 'warning')
 
+    # 查询当前用户所有笔记和文件，渲染模板
     notes = Note.query.filter_by(user_id=user.id).all()
     uploads = UploadFile.query.filter_by(user_id=user.id).all()
     return render_template_string(
@@ -444,10 +457,11 @@ def dashboard():
 @app.route('/note/edit/<int:note_id>', methods=['GET', 'POST'])
 @login_required
 def edit_note(note_id):
+    # 笔记编辑页，只能编辑自己的笔记
     user = get_current_user()
     note = Note.query.get_or_404(note_id)
     if note.user_id != user.id:
-        abort(403)
+        abort(403)  # 权限不足禁止访问
 
     if request.method == 'POST':
         content = request.form.get('content', '').strip()
@@ -464,6 +478,7 @@ def edit_note(note_id):
 @app.route('/note/delete/<int:note_id>', methods=['POST'])
 @login_required
 def delete_note(note_id):
+    # 删除笔记，只能删除自己的
     user = get_current_user()
     note = Note.query.get_or_404(note_id)
     if note.user_id != user.id:
@@ -476,6 +491,7 @@ def delete_note(note_id):
 @app.route('/file/delete/<int:file_id>', methods=['POST'])
 @login_required
 def delete_file(file_id):
+    # 删除上传文件，只能删除自己的
     user = get_current_user()
     f = UploadFile.query.get_or_404(file_id)
     if f.user_id != user.id:
@@ -484,7 +500,7 @@ def delete_file(file_id):
     file_path = os.path.join(user_folder, f.filename)
     try:
         if os.path.exists(file_path):
-            os.remove(file_path)
+            os.remove(file_path)  # 删除磁盘文件
     except Exception as e:
         flash(f'删除文件异常: {e}', 'danger')
     db.session.delete(f)
@@ -495,6 +511,7 @@ def delete_file(file_id):
 @app.route('/search', methods=['GET', 'POST'])
 @login_required
 def search():
+    # 用户搜索页，POST请求返回匹配结果
     if request.method == 'POST':
         query = request.form.get('query', '').strip()
         if not query:
@@ -504,7 +521,7 @@ def search():
         users = User.query.all()
         scored_users = []
         for u in users:
-            score = lcs(query.lower(), u.username.lower())
+            score = lcs(query.lower(), u.username.lower())  # 基于LCS算法评分匹配度
             scored_users.append((score, u))
         scored_users.sort(key=lambda x: x[0], reverse=True)
         matches = [{'username': u.username, 'score': s} for s, u in scored_users if s > 0]
@@ -518,11 +535,12 @@ def search():
 @app.route('/profile/<string:username>')
 @login_required
 def profile(username):
+    # 查看用户主页，只读权限
     user = User.query.filter_by(username=username).first_or_404()
     notes = Note.query.filter_by(user_id=user.id).all()
     uploads = UploadFile.query.filter_by(user_id=user.id).all()
     current_user = get_current_user()
-    is_self = (current_user.username == user.username)
+    is_self = (current_user.username == user.username)  # 判断是否是自己
     return render_template_string(
         profile_html, base_html=base_html,
         user=user, notes=notes, uploads=uploads, is_self=is_self,
@@ -530,14 +548,14 @@ def profile(username):
 
 @app.route('/uploads/<string:username>/<string:filename>')
 def uploaded_file(username, filename):
-    # 文件名安全处理
+    # 静态文件路由：返回指定用户目录下的文件
     user_folder = os.path.join(app.config['UPLOAD_FOLDER'], username)
     if not os.path.exists(os.path.join(user_folder, filename)):
-        abort(404)
+        abort(404)  # 文件未找到
     return send_from_directory(user_folder, filename)
 
 if __name__ == '__main__':
-    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)  # 确保上传根目录存在
     with app.app_context():
-        db.create_all()
-    app.run(debug=True)
+        db.create_all()  # 创建数据库表
+    app.run(debug=False)  # 关闭调试模式，生产环境请配置反向代理
