@@ -92,7 +92,7 @@ GoldenRedNotes/
 
 ## 📜 许可证
 
-本项目采用 [MIT 许可证](LICENSE) 进行开源授权。  
+本项目采用 [GPL-3](LICENSE) 进行开源授权。  
 © 2024 Wangyifan349
 
 ---
