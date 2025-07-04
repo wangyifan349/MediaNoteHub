@@ -1,4 +1,4 @@
-# 🌟 GoldenRedNotes 🌟
+# 🌟 MediaNoteHub 🌟
 
 ![Flask](https://img.shields.io/badge/Flask-Powered-6f42c1?logo=flask) ![License](https://img.shields.io/badge/License-MIT-red) ![Python](https://img.shields.io/badge/Python-3.7%2B-blue)
 
