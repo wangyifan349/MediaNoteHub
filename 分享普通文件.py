@@ -1,3 +1,8 @@
+
+
+
+
+
 import os
 import random
 import sqlite3
@@ -395,3 +400,462 @@ def error_404(e):
 if __name__ == "__main__":
     init_db()  # 启动时初始化数据库表
     app.run(host="0.0.0.0", port=8000, debug=True)
+
+
+
+```html
+<!-- templates/base.html -->
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title or "文件共享平台" }}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <style>
+    hr { margin-top: 1.5rem; margin-bottom: 1.5rem;}
+    .media-preview {max-width: 100%; height: auto;}
+  </style>
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
+  <div class="container">
+    <a class="navbar-brand" href="{{ url_for('home') }}">FileShare</a>
+    <div class="d-flex">
+      {% if user.is_authenticated %}
+        <span class="navbar-text me-3">Hello, {{ user.username }}</span>
+        <a href="{{ url_for('myfiles') }}" class="btn btn-outline-light me-2">My Files</a>
+        <a href="{{ url_for('change_password') }}" class="btn btn-outline-light me-2">Change Password</a>
+        <form action="{{ url_for('logout_post') }}" method="post" class="d-inline">
+          <button class="btn btn-outline-light" type="submit">Logout</button>
+        </form>
+      {% else %}
+        <a href="{{ url_for('login') }}" class="btn btn-light me-2">Login</a>
+        <a href="{{ url_for('register') }}" class="btn btn-light">Register</a>
+      {% endif %}
+    </div>
+  </div>
+</nav>
+<div class="container">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+      <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// 上传文件Ajax
+function uploadFile() {
+    var input = document.getElementById('uploadFileInput');
+    if(input.files.length === 0) {
+        alert("请选择文件");
+        return;
+    }
+    var file = input.files[0];
+    var currentPath = document.getElementById('currentPath').value;
+
+    var formData = new FormData();
+    formData.append("file", file);
+    formData.append("current_path", currentPath);
+
+    var xhr = new XMLHttpRequest();
+    xhr.open("POST", "{{ url_for('upload_file') }}", true);
+    xhr.onload = function() {
+        if(xhr.status === 200) {
+            var resp = JSON.parse(xhr.responseText);
+            if(resp.success) {
+                alert("上传成功: " + resp.filename);
+                window.location.reload();
+            } else {
+                alert("上传失败");
+            }
+        } else {
+            alert("上传错误");
+        }
+    };
+    xhr.send(formData);
+}
+
+// 预览文件函数
+function previewFile(url, filename) {
+  const container = document.getElementById('previewContent');
+  container.innerHTML = '';
+  const lower = filename.toLowerCase();
+  let mediaElem;
+  if(lower.endsWith('.mp4') || lower.endsWith('.webm') || lower.endsWith('.ogg')) {
+    mediaElem = document.createElement('video');
+    mediaElem.setAttribute('controls', '');
+    mediaElem.setAttribute('class', 'media-preview');
+    mediaElem.src = url;
+  } else if(lower.endsWith('.mp3') || lower.endsWith('.wav') || lower.endsWith('.flac')) {
+    mediaElem = document.createElement('audio');
+    mediaElem.setAttribute('controls', '');
+    mediaElem.setAttribute('class', 'media-preview');
+    mediaElem.src = url;
+  } else if(lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.gif')) {
+    mediaElem = document.createElement('img');
+    mediaElem.setAttribute('class', 'media-preview img-fluid');
+    mediaElem.src = url;
+  } else {
+    mediaElem = document.createElement('p');
+    mediaElem.textContent = "无法预览此文件类型。";
+  }
+  container.appendChild(mediaElem);
+}
+</script>
+</body>
+</html>
+
+<!-- templates/home.html -->
+{% extends "base.html" %}
+{% block content %}
+<div class="text-center p-5">
+  <h1>Welcome{% if user.is_authenticated %}, {{ user.username }}{% endif %}!</h1>
+  <hr>
+  <p>
+    <a href="{{ url_for('browse_all') }}" class="btn btn-primary btn-lg me-2">Browse Shared Files</a>
+    {% if user.is_authenticated %}
+    <a href="{{ url_for('myfiles') }}" class="btn btn-success btn-lg me-2">Manage My Files</a>
+    {% else %}
+    <a href="{{ url_for('login') }}" class="btn btn-success btn-lg me-2">Login</a>
+    <a href="{{ url_for('register') }}" class="btn btn-secondary btn-lg">Register</a>
+    {% endif %}
+  </p>
+  <hr>
+  <p><a href="{{ url_for('browse_random') }}" class="btn btn-warning btn-lg">Random Shared File</a></p>
+  <hr>
+  <form action="{{ url_for('search_files') }}" method="get" class="d-flex justify-content-center" role="search">
+    <input type="search" name="q" class="form-control form-control-lg w-50" placeholder="Search shared files by name..." aria-label="Search" required>
+    <button class="btn btn-outline-primary ms-2" type="submit">Search</button>
+  </form>
+</div>
+{% endblock %}
+
+<!-- templates/register.html -->
+{% extends "base.html" %}
+{% block content %}
+<h2>User Registration</h2>
+<hr>
+<form method="post" style="max-width:400px;">
+  <div class="mb-3">
+    <label for="username" class="form-label">Username</label>
+    <input maxlength="30" name="username" type="text" class="form-control" id="username" required autofocus>
+  </div>
+  <div class="mb-3">
+    <label for="password" class="form-label">Password (at least 6 chars)</label>
+    <input maxlength="50" minlength="6" name="password" type="password" class="form-control" id="password" required>
+  </div>
+  <button type="submit" class="btn btn-primary">Register</button>
+  <a href="{{ url_for('home') }}" class="btn btn-secondary ms-2">Back</a>
+</form>
+{% endblock %}
+
+<!-- templates/login.html -->
+{% extends "base.html" %}
+{% block content %}
+<h2>User Login</h2>
+<hr>
+<form method="post" style="max-width:400px;">
+  <div class="mb-3">
+    <label for="username" class="form-label">Username</label>
+    <input maxlength="30" name="username" type="text" class="form-control" id="username" required autofocus>
+  </div>
+  <div class="mb-3">
+    <label for="password" class="form-label">Password</label>
+    <input minlength="6" maxlength="50" name="password" type="password" class="form-control" id="password" required>
+  </div>
+  <button type="submit" class="btn btn-primary">Login</button>
+  <a href="{{ url_for('home') }}" class="btn btn-secondary ms-2">Back</a>
+</form>
+{% endblock %}
+
+<!-- templates/myfiles.html -->
+{% extends "base.html" %}
+{% block content %}
+<h2>My Files / {{ current_path or "Root" }}</h2>
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    {% for name, link in breadcrumb %}
+      <li class="breadcrumb-item {% if loop.last %}active{% endif %}" {% if loop.last %}aria-current="page"{% endif %}>
+        {% if not loop.last %}
+          <a href="{{ link }}">{{ name }}</a>
+        {% else %}
+          {{ name }}
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ol>
+</nav>
+<hr>
+<!-- Sharing toggle -->
+<form method="post" action="{{ url_for('toggle_sharing') }}">
+  <div class="form-check form-switch mb-3">
+    <input class="form-check-input" type="checkbox" id="sharingToggle" name="dummy" onchange="this.form.submit()" {% if user.sharing_enabled %}checked{% endif %}>
+    <label class="form-check-label" for="sharingToggle">Sharing Enabled (publicly visible)</label>
+  </div>
+</form>
+<hr>
+<div class="row">
+  <div class="col-md-6">
+    <h4>Folders</h4>
+    {% if dirs %}
+      <ul class="list-group">
+        {% for folder in dirs %}
+          <li class="list-group-item">
+            <a href="{{ url_for('myfiles', path=(current_path + '/' + folder) if current_path else folder) }}">{{ folder }}/</a>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p><em>No sub directories</em></p>
+    {% endif %}
+    <hr>
+    <form method="post" action="{{ url_for('create_folder') }}" class="mb-4">
+      <input type="hidden" name="current_path" value="{{ current_path }}">
+      <div class="input-group">
+        <input type="text" name="folder_name" class="form-control" placeholder="New folder name" maxlength="50" required>
+        <button class="btn btn-outline-primary" type="submit">Create Folder</button>
+      </div>
+    </form>
+  </div>
+  <div class="col-md-6">
+    <h4>Files</h4>
+    {% if files %}
+      <ul class="list-group">
+        {% for file in files %}
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <a href="{{ url_for('myfiles', path=(current_path + '/' + file) if current_path else file) }}">{{ file }}</a>
+            {% if file.endswith(('.mp4', '.webm', '.ogg', '.mp3', '.wav', '.flac', '.jpg', '.jpeg', '.png', '.gif')) %}
+            <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#previewModal" onclick="previewFile('{{ url_for('myfiles', path=(current_path + '/' + file) if current_path else file) }}', '{{ file }}')">Preview</button>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p><em>No files</em></p>
+    {% endif %}
+    <hr>
+    <label for="uploadFileInput" class="form-label">Upload File</label>
+    <input class="form-control mb-3" type="file" id="uploadFileInput" aria-describedby="uploadHelp">
+    <button class="btn btn-outline-success" onclick="uploadFile()">Upload (Ajax)</button>
+    <input type="hidden" id="currentPath" value="{{ current_path }}">
+  </div>
+</div>
+
+<!-- Preview modal -->
+<div class="modal fade" id="previewModal" tabindex="-1" aria-labelledby="previewModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="previewModalLabel">Preview File</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center" id="previewContent">
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr>
+<p><a href="{{ url_for('home') }}" class="btn btn-secondary">Back to Home</a></p>
+{% endblock %}
+
+<!-- templates/change_password.html -->
+{% extends "base.html" %}
+{% block content %}
+<h2>Change Password</h2>
+<hr>
+<form method="post" style="max-width:400px;">
+  <div class="mb-3">
+    <label for="current_password" class="form-label">Current Password</label>
+    <input name="current_password" id="current_password" type="password" class="form-control" required>
+  </div>
+  <div class="mb-3">
+    <label for="new_password" class="form-label">New Password (at least 6 chars)</label>
+    <input name="new_password" id="new_password" type="password" class="form-control" minlength="6" required>
+  </div>
+  <div class="mb-3">
+    <label for="confirm_password" class="form-label">Confirm New Password</label>
+    <input name="confirm_password" id="confirm_password" type="password" class="form-control" minlength="6" required>
+  </div>
+  <button type="submit" class="btn btn-primary">Change Password</button>
+  <a href="{{ url_for('myfiles') }}" class="btn btn-secondary ms-2">Cancel</a>
+</form>
+{% endblock %}
+
+<!-- templates/browse.html -->
+{% extends "base.html" %}
+{% block content %}
+<h2>Browsing Shared Files / {{ current_path or "Root" }}</h2>
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    {% for name, link in breadcrumb %}
+      <li class="breadcrumb-item {% if loop.last %}active{% endif %}" {% if loop.last %}aria-current="page"{% endif %}>
+        {% if not loop.last %}
+          <a href="{{ link }}">{{ name }}</a>
+        {% else %}
+          {{ name }}
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ol>
+</nav>
+<hr>
+<div class="row">
+  <div class="col-md-6">
+    <h4>Folders</h4>
+    {% if dirs %}
+      <ul class="list-group">
+        {% for folder in dirs %}
+          <li class="list-group-item">
+            <a href="{{ url_for('browse_all', path=(current_path + '/' + folder) if current_path else folder) }}">{{ folder }}/</a>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p><em>No sub folders</em></p>
+    {% endif %}
+  </div>
+  <div class="col-md-6">
+    <h4>Files</h4>
+    {% if files %}
+      <ul class="list-group">
+        {% for file in files %}
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <a href="{{ url_for('serve_shared', path=(current_path + '/' + file) if current_path else file) }}">{{ file }}</a>
+            {% if file.endswith(('.mp4', '.webm', '.ogg', '.mp3', '.wav', '.flac', '.jpg', '.jpeg', '.png', '.gif')) %}
+            <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#previewModal" onclick="previewFile('{{ url_for('serve_shared', path=(current_path + '/' + file) if current_path else file) }}', '{{ file }}')">Preview</button>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p><em>No files</em></p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Preview modal -->
+<div class="modal fade" id="previewModal" tabindex="-1" aria-labelledby="previewModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="previewModalLabel">Preview File</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center" id="previewContent">
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr>
+<p><a href="{{ url_for('home') }}" class="btn btn-secondary">Back to Home</a></p>
+{% endblock %}
+
+<!-- templates/browse_random_file.html -->
+{% extends "base.html" %}
+{% block content %}
+<h3>Random Shared File</h3>
+<hr>
+<p><strong>Filename:</strong> {{ filename }}</p>
+<p><a href="{{ url_for('serve_shared', path=rel_path) }}" class="btn btn-primary">Download/Play</a></p>
+<hr>
+<p><a href="{{ url_for('browse_random') }}" class="btn btn-warning">See Another Random File</a></p>
+<p><a href="{{ url_for('home') }}" class="btn btn-secondary">Back to Home</a></p>
+{% endblock %}
+
+<!-- templates/browse_random_dir.html -->
+{% extends "base.html" %}
+{% block content %}
+<h3>Random Shared Directory - User: {{ user_folder }} / {{ rel_path }}</h3>
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    {% for name, link in breadcrumb %}
+      <li class="breadcrumb-item {% if loop.last %}active{% endif %}" {% if loop.last %}aria-current="page"{% endif %}>
+        {% if not loop.last %}
+          <a href="{{ link }}">{{ name }}</a>
+        {% else %}
+          {{ name }}
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ol>
+</nav>
+<hr>
+<h4>Folders</h4>
+{% if dirs %}
+<ul class="list-group mb-3">
+  {% for d in dirs %}
+    <li class="list-group-item">{{ d }}/</li>
+  {% endfor %}
+</ul>
+{% else %}
+<p><em>No sub folders</em></p>
+{% endif %}
+<h4>Files</h4>
+{% if files %}
+<ul class="list-group mb-3">
+  {% for f in files %}
+    <li class="list-group-item">{{ f }}</li>
+  {% endfor %}
+</ul>
+{% else %}
+<p><em>No files</em></p>
+{% endif %}
+<hr>
+<p><a href="{{ url_for('browse_random') }}" class="btn btn-warning">See Another Random File</a></p>
+<p><a href="{{ url_for('home') }}" class="btn btn-secondary">Back to Home</a></p>
+{% endblock %}
+
+<!-- templates/search.html -->
+{% extends "base.html" %}
+{% block content %}
+<h2>Search Results for "{{ keyword }}"</h2>
+<hr>
+{% if results %}
+  <ul class="list-group">
+    {% for r in results %}
+      <li class="list-group-item d-flex justify-content-between align-items-center">
+        <div>
+          <strong>{{ r.filename }}</strong> &nbsp; by user {{ r.user }}
+        </div>
+        <a href="{{ url_for('serve_shared', path=r.rel_path) }}" class="btn btn-primary btn-sm">Download/Play</a>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+<p><em>No files found.</em></p>
+{% endif %}
+<hr>
+<p><a href="{{ url_for('home') }}" class="btn btn-secondary">Back to Home</a></p>
+{% endblock %}
+
+<!-- templates/error.html -->
+{% extends "base.html" %}
+{% block content %}
+<div class="text-center mt-5">
+<h1>Error {{ code }}</h1>
+<p>{{ msg }}</p>
+<a href="{{ url_for('home') }}" class="btn btn-primary">Back to Home</a>
+</div>
+{% endblock %}
+```
+
+
+
+
+
+
+
+
+
+
+
